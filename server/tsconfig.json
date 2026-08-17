@@ -6,8 +6,8 @@
     "moduleResolution": "nodenext",
     "types": ["node"],
 
-    "rootDir": "src",
-    "outDir": "dist",
+    //"rootDir": "src",
+    //"outDir": "dist",
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -24,5 +24,5 @@
     "skipLibCheck": true,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "migrations/**/*.ts"]
 }
