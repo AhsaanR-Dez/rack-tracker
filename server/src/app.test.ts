@@ -1,11 +1,12 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
+import { ConflictError, NotFoundError } from "./errors/http-errors.js";
 import type { Equipment, Rack } from "./types.js";
 
 interface ApiResponse<T> {
   data?: T;
-  error?: { status: number; message: string };
+  error?: { status: number; message: string; issues?: { path: string; message: string }[] };
 }
 
 function body<T>(res: { body: unknown }): ApiResponse<T> {
@@ -14,13 +15,17 @@ function body<T>(res: { body: unknown }): ApiResponse<T> {
 
 vi.mock("./repositories/rack-repository.js", () => ({
   findAllRacks: vi.fn(),
+  findRackById: vi.fn(),
+  createRack: vi.fn(),
+  updateRack: vi.fn(),
 }));
 
 vi.mock("./repositories/equipment-repository.js", () => ({
   findAllEquipment: vi.fn(),
 }));
 
-const { findAllRacks } = await import("./repositories/rack-repository.js");
+const { findAllRacks, findRackById, createRack, updateRack } =
+  await import("./repositories/rack-repository.js");
 const { findAllEquipment } = await import("./repositories/equipment-repository.js");
 
 const sampleRack: Rack = {
@@ -44,6 +49,8 @@ const sampleEquipment: Equipment = {
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
 
+const validRackBody = { name: "R1", location: "Room A", totalUnits: 42 };
+
 const app = buildApp();
 
 beforeEach(() => {
@@ -66,6 +73,7 @@ describe("GET /api/racks", () => {
 
     const res = await request(app).get("/api/racks");
 
+    expect(res.status).toBe(200);
     expect(body<Rack[]>(res).data).toHaveLength(1);
     expect(body<Rack[]>(res).data?.[0]).toMatchObject({ name: "R1", totalUnits: 42 });
   });
@@ -86,6 +94,107 @@ describe("GET /api/racks", () => {
 
     expect(res.status).toBe(500);
     expect(body(res).error?.status).toBe(500);
+  });
+});
+
+describe("GET /api/racks/:id", () => {
+  it("returns the rack when it exists", async () => {
+    vi.mocked(findRackById).mockResolvedValue(sampleRack);
+
+    const res = await request(app).get("/api/racks/1");
+
+    expect(res.status).toBe(200);
+    expect(body<Rack>(res).data).toMatchObject({ id: 1 });
+    expect(findRackById).toHaveBeenCalledWith(1);
+  });
+
+  it("returns 404 when the rack does not exist", async () => {
+    vi.mocked(findRackById).mockResolvedValue(null);
+
+    const res = await request(app).get("/api/racks/999");
+
+    expect(res.status).toBe(404);
+    expect(body(res).error?.status).toBe(404);
+  });
+
+  it("returns 400 for a non-numeric id without hitting the repository", async () => {
+    const res = await request(app).get("/api/racks/abc");
+
+    expect(res.status).toBe(400);
+    expect(findRackById).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/racks", () => {
+  it("returns 201 with a Location header", async () => {
+    vi.mocked(createRack).mockResolvedValue(sampleRack);
+
+    const res = await request(app).post("/api/racks").send(validRackBody);
+
+    expect(res.status).toBe(201);
+    expect(res.headers.location).toBe("/api/racks/1");
+    expect(body<Rack>(res).data).toMatchObject({ id: 1, name: "R1" });
+  });
+
+  it("returns 400 listing every missing field at once", async () => {
+    const res = await request(app).post("/api/racks").send({});
+
+    expect(res.status).toBe(400);
+    expect(body(res).error?.issues).toHaveLength(3);
+    expect(createRack).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an unrecognized key", async () => {
+    const res = await request(app)
+      .post("/api/racks")
+      .send({ ...validRackBody, nmae: "typo" });
+
+    expect(res.status).toBe(400);
+    expect(body(res).error?.issues?.[0]?.message).toContain("nmae");
+  });
+
+  it("returns 400 when totalUnits is a string", async () => {
+    const res = await request(app)
+      .post("/api/racks")
+      .send({ ...validRackBody, totalUnits: "42" });
+
+    expect(res.status).toBe(400);
+    expect(body(res).error?.issues?.[0]?.path).toBe("totalUnits");
+  });
+
+  it("returns 409 when the name is taken", async () => {
+    vi.mocked(createRack).mockRejectedValue(new ConflictError('A rack named "R1" already exists'));
+
+    const res = await request(app).post("/api/racks").send(validRackBody);
+
+    expect(res.status).toBe(409);
+    expect(body(res).error?.status).toBe(409);
+  });
+});
+
+describe("PUT /api/racks/:id", () => {
+  it("passes the coerced numeric id to the repository", async () => {
+    vi.mocked(updateRack).mockResolvedValue(sampleRack);
+
+    const res = await request(app).put("/api/racks/1").send(validRackBody);
+
+    expect(res.status).toBe(200);
+    expect(updateRack).toHaveBeenCalledWith(1, validRackBody);
+  });
+
+  it("returns 404 when the rack does not exist", async () => {
+    vi.mocked(updateRack).mockRejectedValue(new NotFoundError("Rack 999 was not found"));
+
+    const res = await request(app).put("/api/racks/999").send(validRackBody);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for an invalid body without hitting the repository", async () => {
+    const res = await request(app).put("/api/racks/1").send({ name: "" });
+
+    expect(res.status).toBe(400);
+    expect(updateRack).not.toHaveBeenCalled();
   });
 });
 
