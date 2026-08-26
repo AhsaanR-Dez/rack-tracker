@@ -18,13 +18,14 @@ vi.mock("./repositories/rack-repository.js", () => ({
   findRackById: vi.fn(),
   createRack: vi.fn(),
   updateRack: vi.fn(),
+  deleteRack: vi.fn(),
 }));
 
 vi.mock("./repositories/equipment-repository.js", () => ({
   findAllEquipment: vi.fn(),
 }));
 
-const { findAllRacks, findRackById, createRack, updateRack } =
+const { findAllRacks, findRackById, createRack, updateRack, deleteRack } =
   await import("./repositories/rack-repository.js");
 const { findAllEquipment } = await import("./repositories/equipment-repository.js");
 
@@ -197,7 +198,27 @@ describe("PUT /api/racks/:id", () => {
     expect(updateRack).not.toHaveBeenCalled();
   });
 });
+describe("DELETE /api/racks/:id", () => {
+  it("returns 204 with no body when the rack is empty", async () => {
+    vi.mocked(deleteRack).mockResolvedValue(undefined);
 
+    const res = await request(app).delete("/api/racks/1");
+
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
+    expect(deleteRack).toHaveBeenCalledWith(1);
+  });
+
+  it("returns 409 when the rack still holds equipment", async () => {
+    vi.mocked(deleteRack).mockRejectedValue(
+      new ConflictError("Rack 1 still holds 1 item(s). Remove them first."),
+    );
+
+    const res = await request(app).delete("/api/racks/1");
+
+    expect(res.status).toBe(409);
+  });
+});
 describe("GET /api/equipment", () => {
   it("returns the equipment wrapped in data", async () => {
     vi.mocked(findAllEquipment).mockResolvedValue([sampleEquipment]);

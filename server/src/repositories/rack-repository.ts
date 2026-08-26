@@ -99,3 +99,46 @@ export async function updateRack(id: number, input: UpdateRackInput): Promise<Ra
     throw err;
   }
 }
+export async function deleteRack(id: number): Promise<void> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<{ id: number }>(
+      `SELECT id
+         FROM racks
+        WHERE id = $1
+          FOR UPDATE`,
+      [id],
+    );
+
+    if (existing.rows[0] === undefined) {
+      throw new NotFoundError(`Rack ${String(id)} was not found`);
+    }
+
+    const counted = await client.query<{ count: string }>(
+      `SELECT COUNT(*) AS count
+         FROM equipment
+        WHERE rack_id = $1`,
+      [id],
+    );
+
+    const occupied = Number(counted.rows[0]?.count ?? "0");
+
+    if (occupied > 0) {
+      throw new ConflictError(
+        `Rack ${String(id)} still holds ${String(occupied)} item(s). Remove them first.`,
+      );
+    }
+
+    await client.query(`DELETE FROM racks WHERE id = $1`, [id]);
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
