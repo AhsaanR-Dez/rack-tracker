@@ -23,11 +23,16 @@ vi.mock("./repositories/rack-repository.js", () => ({
 
 vi.mock("./repositories/equipment-repository.js", () => ({
   findAllEquipment: vi.fn(),
+  findEquipmentById: vi.fn(),
+  createEquipment: vi.fn(),
+  updateEquipment: vi.fn(),
+  deleteEquipment: vi.fn(),
 }));
 
 const { findAllRacks, findRackById, createRack, updateRack, deleteRack } =
   await import("./repositories/rack-repository.js");
-const { findAllEquipment } = await import("./repositories/equipment-repository.js");
+const { findAllEquipment, findEquipmentById, createEquipment, updateEquipment, deleteEquipment } =
+  await import("./repositories/equipment-repository.js");
 
 const sampleRack: Rack = {
   id: 1,
@@ -51,7 +56,12 @@ const sampleEquipment: Equipment = {
 };
 
 const validRackBody = { name: "R1", location: "Room A", totalUnits: 42 };
-
+const validEquipmentBody = {
+  rackId: 1,
+  hostname: "sw-a-01",
+  model: "Cisco C9300",
+  startUnit: 1,
+};
 const app = buildApp();
 
 beforeEach(() => {
@@ -198,6 +208,7 @@ describe("PUT /api/racks/:id", () => {
     expect(updateRack).not.toHaveBeenCalled();
   });
 });
+
 describe("DELETE /api/racks/:id", () => {
   it("returns 204 with no body when the rack is empty", async () => {
     vi.mocked(deleteRack).mockResolvedValue(undefined);
@@ -236,5 +247,137 @@ describe("unknown routes", () => {
 
     expect(res.status).toBe(404);
     expect(body(res).error?.status).toBe(404);
+  });
+});
+describe("GET /api/equipment/:id", () => {
+  it("returns the item when it exists", async () => {
+    vi.mocked(findEquipmentById).mockResolvedValue(sampleEquipment);
+
+    const res = await request(app).get("/api/equipment/1");
+
+    expect(res.status).toBe(200);
+    expect(body<Equipment>(res).data).toMatchObject({ hostname: "sw-a-01" });
+    expect(findEquipmentById).toHaveBeenCalledWith(1);
+  });
+
+  it("returns 404 when it does not exist", async () => {
+    vi.mocked(findEquipmentById).mockResolvedValue(null);
+
+    const res = await request(app).get("/api/equipment/999");
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/equipment", () => {
+  it("returns 201 and applies the schema defaults", async () => {
+    vi.mocked(createEquipment).mockResolvedValue(sampleEquipment);
+
+    const res = await request(app).post("/api/equipment").send(validEquipmentBody);
+
+    expect(res.status).toBe(201);
+    expect(res.headers.location).toBe("/api/equipment/1");
+    expect(createEquipment).toHaveBeenCalledWith({
+      ...validEquipmentBody,
+      status: "active",
+      unitHeight: 1,
+    });
+  });
+
+  it("returns 409 when the slot is already occupied", async () => {
+    vi.mocked(createEquipment).mockRejectedValue(
+      new ConflictError("srv-a-01 already occupies units 10 to 13"),
+    );
+
+    const res = await request(app)
+      .post("/api/equipment")
+      .send({ ...validEquipmentBody, startUnit: 12 });
+
+    expect(res.status).toBe(409);
+    expect(body(res).error?.message).toContain("occupies");
+  });
+
+  it("returns 409 when the item does not fit in the rack", async () => {
+    vi.mocked(createEquipment).mockRejectedValue(
+      new ConflictError("Units 40 to 43 do not fit in a 42U rack"),
+    );
+
+    const res = await request(app)
+      .post("/api/equipment")
+      .send({ ...validEquipmentBody, startUnit: 40, unitHeight: 4 });
+
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 404 when the rack does not exist", async () => {
+    vi.mocked(createEquipment).mockRejectedValue(new NotFoundError("Rack 999 was not found"));
+
+    const res = await request(app)
+      .post("/api/equipment")
+      .send({ ...validEquipmentBody, rackId: 999 });
+
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 400 for a status outside the allowed set", async () => {
+    const res = await request(app)
+      .post("/api/equipment")
+      .send({ ...validEquipmentBody, status: "broken" });
+
+    expect(res.status).toBe(400);
+    expect(body(res).error?.issues?.[0]?.path).toBe("status");
+    expect(createEquipment).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a hostname over 15 characters", async () => {
+    const res = await request(app)
+      .post("/api/equipment")
+      .send({ ...validEquipmentBody, hostname: "this-name-is-way-too-long" });
+
+    expect(res.status).toBe(400);
+    expect(body(res).error?.issues?.[0]?.path).toBe("hostname");
+  });
+});
+
+describe("PUT /api/equipment/:id", () => {
+  it("allows an item to keep its own slot", async () => {
+    vi.mocked(updateEquipment).mockResolvedValue(sampleEquipment);
+
+    const res = await request(app).put("/api/equipment/1").send(validEquipmentBody);
+
+    expect(res.status).toBe(200);
+    expect(updateEquipment).toHaveBeenCalledWith(1, {
+      ...validEquipmentBody,
+      status: "active",
+      unitHeight: 1,
+    });
+  });
+
+  it("returns 404 when the item does not exist", async () => {
+    vi.mocked(updateEquipment).mockRejectedValue(new NotFoundError("Equipment 999 was not found"));
+
+    const res = await request(app).put("/api/equipment/999").send(validEquipmentBody);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /api/equipment/:id", () => {
+  it("returns 204 with no body", async () => {
+    vi.mocked(deleteEquipment).mockResolvedValue(undefined);
+
+    const res = await request(app).delete("/api/equipment/1");
+
+    expect(res.status).toBe(204);
+    expect(res.text).toBe("");
+    expect(deleteEquipment).toHaveBeenCalledWith(1);
+  });
+
+  it("returns 404 when the item does not exist", async () => {
+    vi.mocked(deleteEquipment).mockRejectedValue(new NotFoundError("Equipment 999 was not found"));
+
+    const res = await request(app).delete("/api/equipment/999");
+
+    expect(res.status).toBe(404);
   });
 });
