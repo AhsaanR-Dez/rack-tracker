@@ -5,6 +5,7 @@ import {
   findAllRacks,
   findRackById,
   updateRack,
+  deleteRack,
 } from "../repositories/rack-repository.js";
 import { createRackSchema, rackIdParamSchema, updateRackSchema } from "../schemas/rack.schemas.js";
 import { parseOrThrow } from "../validation.js";
@@ -43,4 +44,10 @@ racksRouter.put("/:id", async (req, res) => {
   const rack = await updateRack(id, input);
 
   res.json({ data: rack });
+});
+racksRouter.delete("/:id", async (req, res) => {
+  const { id } = parseOrThrow(rackIdParamSchema, req.params);
+  await deleteRack(id);
+
+  res.status(204).send();
 });
