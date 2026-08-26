@@ -21,6 +21,7 @@ export function buildApp(): Express {
 
   app.use("/*splat", notFound);
   app.use(errorHandler);
-
+  app.use(notFound);
+  
   return app;
 }
