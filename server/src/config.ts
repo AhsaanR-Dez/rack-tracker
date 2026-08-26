@@ -1,3 +1,4 @@
+
 function readPort(fallback: number): number {
   const raw = process.env.PORT;
   if (raw === undefined || raw === "") return fallback;
@@ -19,6 +20,7 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: readPort(3000),
   logLevel: process.env.LOG_LEVEL ?? "info",
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
   databaseUrl: required("DATABASE_URL", process.env.DATABASE_URL),
 } as const;
 
