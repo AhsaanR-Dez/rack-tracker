@@ -1,5 +1,7 @@
 import { useDeleteRack, useEquipment, useRacks } from "./hooks/queries";
 import { RackCard } from "./components/RackCard";
+import { CreateRackForm } from "./components/CreateRackForm";
+import { CreateEquipmentForm } from "./components/CreateEquipmentForm";
 import type { Rack } from "./types";
 
 export default function App() {
@@ -25,6 +27,9 @@ export default function App() {
       </header>
 
       <main className="px-6 py-6">
+        <div className="mb-6">
+          <CreateRackForm />
+        </div>
         {isLoading && <p className="text-slate-400">Loading...</p>}
 
         {error && (
@@ -41,6 +46,9 @@ export default function App() {
 
         {racksQuery.data && equipmentQuery.data && (
           <>
+            <div className="mb-6">
+              <CreateEquipmentForm racks={racksQuery.data} />
+            </div>
             {racksQuery.data.length === 0 && <p className="text-slate-400">No racks yet.</p>}
 
             <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
